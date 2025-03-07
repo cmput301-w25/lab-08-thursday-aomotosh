@@ -3,12 +3,12 @@
 
 ## Student Details
 
-- **Full Name:** `<Enter name>`
-- **CCID:** `<Enter ccid>`
+- **Full Name:** `Lawrence Omotosho`
+- **CCID:** `Aomotosh`
 
 ## References and Resources
 
-List any resources used here, or simply put `N/A` if not applicable.
+List any resources used here, or simply put `Chat Gpt for helping me addjust the setup for the lab acitivity` if not applicable.
 
 ## Verbal Collaboration
 
