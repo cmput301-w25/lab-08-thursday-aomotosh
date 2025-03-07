@@ -26,7 +26,7 @@ public class MovieDialogFragment extends DialogFragment {
     private EditText editMovieYear;
     private MovieProvider movieProvider;
 
-    public static MovieDialogFragment newInstance(Movie movie){
+    public static MovieDialogFragment newInstance(Movie movie) {
         Bundle args = new Bundle();
         args.putSerializable("Movie", movie);
 
@@ -48,19 +48,20 @@ public class MovieDialogFragment extends DialogFragment {
         Bundle bundle = getArguments();
         Movie movie;
 
-        if (tag != null && tag.equals( "Movie Details") && bundle != null){
+        if (tag != null && tag.equals("Movie Details") && bundle != null) {
             movie = (Movie) bundle.getSerializable("Movie");
             editMovieName.setText(movie.getTitle());
             editMovieGenre.setText(movie.getGenre());
             editMovieYear.setText(String.valueOf(movie.getYear()));
+        } else {
+            movie = null;
         }
-        else {movie = null;}
 
         editMovieName.addTextChangedListener(new TextValidator(editMovieName) {
             @Override
             public void validate(TextView textView) {
-                if(isEmpty(textView.getText())) {
-                    textView.setError("Move name cannot be empty!");
+                if (isEmpty(textView.getText())) {
+                    textView.setError("Movie name cannot be empty!");
                 }
             }
         });
@@ -68,7 +69,7 @@ public class MovieDialogFragment extends DialogFragment {
         editMovieGenre.addTextChangedListener(new TextValidator(editMovieGenre) {
             @Override
             public void validate(TextView textView) {
-                if(isEmpty(textView.getText())) {
+                if (isEmpty(textView.getText())) {
                     textView.setError("Movie genre cannot be empty!");
                 }
             }
@@ -77,10 +78,10 @@ public class MovieDialogFragment extends DialogFragment {
         editMovieYear.addTextChangedListener(new TextValidator(editMovieYear) {
             @Override
             public void validate(TextView textView) {
-                if(isEmpty(textView.getText())) {
-                    textView.setError("Move year cannot be empty!");
+                if (isEmpty(textView.getText())) {
+                    textView.setError("Movie year cannot be empty!");
                 } else if (!isDigitsOnly(textView.getText())) {
-                    textView.setError("Move year must be numeric!");
+                    textView.setError("Movie year must be numeric!");
                 }
             }
         });
@@ -92,28 +93,55 @@ public class MovieDialogFragment extends DialogFragment {
                 .setView(view)
                 .setTitle("Movie Details")
                 .setNegativeButton("Cancel", null)
-                // Override this later
-                .setPositiveButton("Continue", null)
+                .setPositiveButton("Continue", null) // Override this later
                 .create();
 
-        // Change dialog so it does not automatically dismiss, but only when valid data is entered
+        // Ensure the dialog does not close unless input is valid
         dialog.setOnShowListener(d -> {
             Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             positiveButton.setOnClickListener(v -> {
-                if (!validInput())
-                    return;
+                if (!validInput()) return;
+
                 String title = editMovieName.getText().toString().trim();
                 String genre = editMovieGenre.getText().toString().trim();
                 int year = Integer.parseInt(editMovieYear.getText().toString().trim());
-                if (tag != null && tag.equals( "Movie Details")) {
+
+                if (tag != null && tag.equals("Movie Details")) {
+                    // Update existing movie
                     movieProvider.updateMovie(movie, title, genre, year);
+                    dialog.dismiss();
                 } else {
-                    movieProvider.addMovie(new Movie(title, genre, year));
+                    // Check if movie already exists before adding
+                    movieProvider.movieExists(title, new MovieProvider.MovieCheckCallback() {
+                        @Override
+                        public void onCheck(boolean exists) {
+                            if (exists) {
+                                editMovieName.setError("A movie with this title already exists!");
+                            } else {
+                                movieProvider.addMovie(new Movie(title, genre, year), new MovieProvider.DataStatus() {
+                                    @Override
+                                    public void onDataUpdated() {
+                                        dialog.dismiss(); // Close dialog only if the movie was successfully added
+                                    }
+
+                                    @Override
+                                    public void onError(String error) {
+                                        editMovieName.setError(error);
+                                    }
+                                });
+                            }
+                        }
+
+                        @Override
+                        public void onError(String error) {
+                            editMovieName.setError(error);
+                        }
+                    });
                 }
-                dialog.dismiss();
             });
         });
-        return dialog;
+
+        return dialog; // Return the dialog properly
     }
 
     private boolean validInput() {
@@ -123,7 +151,7 @@ public class MovieDialogFragment extends DialogFragment {
         if (isEmpty(title)) {
             editMovieName.setError("Movie name cannot be empty!");
             return false;
-        } else if (isEmpty(genre)){
+        } else if (isEmpty(genre)) {
             editMovieGenre.setError("Movie genre cannot be empty!");
             return false;
         } else if (isEmpty(year)) {
