@@ -69,7 +69,7 @@ public class MainActivityTest {
     }
 
     @Test
-    public void addMovieShouldAddValidMovieToMovieList() {
+    public void addMovieShouldAddValidMovieToMovieList() throws InterruptedException {
         // Click on button to open addMovie dialog
         onView(withId(R.id.buttonAddMovie)).perform(click());
 
@@ -80,17 +80,13 @@ public class MainActivityTest {
 
         // Submit Form
         onView(withId(android.R.id.button1)).perform(click());
-        try {
             Thread.sleep(3000); // Allows error message to render
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         // Check that our movie list has our new movie
         onView(withText("Interstellar")).check(matches(isDisplayed()));
     }
 
     @Test
-    public void addMovieShouldShowErrorForInvalidMovieName() {
+    public void addMovieShouldShowErrorForInvalidMovieName() throws InterruptedException {
         // Click on button to open addMovie dialog
         onView(withId(R.id.buttonAddMovie)).perform(click());
 
@@ -100,11 +96,8 @@ public class MainActivityTest {
 
         // Submit Form
         onView(withId(android.R.id.button1)).perform(click());
-        try {
-            Thread.sleep(1000); // Allows error message to render
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+            Thread.sleep(4000); // Allows error message to render
+
         // Check that an error is shown to the user
         onView(withId(R.id.edit_title)).check(matches(hasErrorText("Movie name cannot be empty!")));
     }
@@ -151,7 +144,9 @@ public class MainActivityTest {
         onView(withId(android.R.id.button1)).perform(click());
 
         // Check if the error message is displayed
-        onView(withId(R.id.error_text)).check(matches(withText("A movie with this title already exists!")));
+        onView(withId(R.id.edit_title))
+                .check(matches(hasErrorText("A movie with this title already exists!")));
+
     }
 
 

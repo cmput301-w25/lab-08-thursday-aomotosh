@@ -1,34 +1,22 @@
 package com.example.androidcicd;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
-import android.util.Log;
-
 import com.example.androidcicd.movie.MovieProvider;
-import com.google.android.gms.tasks.Task;
-import com.google.firebase.firestore.CollectionReference;
-import com.google.firebase.firestore.DocumentReference;
-
 import com.example.androidcicd.movie.Movie;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.Query;
-import com.google.firebase.firestore.QuerySnapshot;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
+import com.google.firebase.firestore.*;
 
-
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public class MovieProviderTest {
     @Mock
@@ -49,67 +37,117 @@ public class MovieProviderTest {
     @Mock
     private QuerySnapshot mockQuerySnapshot;
 
+    @Mock
+    private MovieProvider.DataStatus mockDataStatus;
+
     private MovieProvider movieProvider;
+
+    @Mock
+    private Task<Void> mockSetTask;
 
     @Before
     public void setUp() {
-        // Start up mocks
         MockitoAnnotations.openMocks(this);
 
-        // Mock Firestore Collection & Queries
+        // Mock Firestore collection and document behavior
         when(mockFirestore.collection("movies")).thenReturn(mockMovieCollection);
         when(mockMovieCollection.document()).thenReturn(mockDocRef);
         when(mockMovieCollection.document(anyString())).thenReturn(mockDocRef);
-
-        // Ensure the document reference returns a valid ID
         when(mockDocRef.getId()).thenReturn("123");
 
-        // Mock Query and Firestore Query Snapshot
-        Query mockQuery = mock(Query.class);
-        Task<QuerySnapshot> mockTask = mock(Task.class);
-        QuerySnapshot mockQuerySnapshot = mock(QuerySnapshot.class);
+        // Mock Firestore set() behavior
+        when(mockDocRef.set(any(Movie.class))).thenReturn(mockSetTask);
+        when(mockSetTask.isSuccessful()).thenReturn(true); // Simulate successful Firestore write
+        when(mockSetTask.addOnSuccessListener(any())).thenAnswer(invocation -> {
+            OnSuccessListener<Void> listener = invocation.getArgument(0);
+            listener.onSuccess(null);
+            return mockSetTask;
+        });
+        when(mockSetTask.addOnFailureListener(any())).thenReturn(mockSetTask);
 
-        // Ensure `whereEqualTo()` returns a valid Query object
+        // Mock Firestore query behavior
         when(mockMovieCollection.whereEqualTo(anyString(), anyString())).thenReturn(mockQuery);
-
-        // Ensure `get()` on Query returns a valid Task<QuerySnapshot>
         when(mockQuery.get()).thenReturn(mockTask);
         when(mockTask.isSuccessful()).thenReturn(true);
         when(mockTask.getResult()).thenReturn(mockQuerySnapshot);
-        when(mockQuerySnapshot.isEmpty()).thenReturn(true); // Adjust for test cases
 
-        // Setup the movie provider
+        // Ensure Firestore query calls the listener
+        doAnswer(invocation -> {
+            OnCompleteListener<QuerySnapshot> listener = invocation.getArgument(0);
+            listener.onComplete(mockTask);
+            return null;
+        }).when(mockTask).addOnCompleteListener(any());
+
+        // Setup MovieProvider
         MovieProvider.setInstanceForTesting(mockFirestore);
         movieProvider = MovieProvider.getInstance(mockFirestore);
     }
 
 
 
-
-
-
     @Test
-    public void testAddMovieSetsId() {
+    public void testAddMovieSetsId() throws InterruptedException {
         // Movie to add
         Movie movie = new Movie("Oppenheimer", "Thriller/Historical Drama", 2023);
 
-        // Ensure Firestore returns a valid document ID
-        when(mockDocRef.getId()).thenReturn("123");
+        // Simulate Firestore returning NO duplicate movies
+        when(mockQuerySnapshot.isEmpty()).thenReturn(true);
 
-        // Mock DataStatus callback
-        MovieProvider.DataStatus mockDataStatus = mock(MovieProvider.DataStatus.class);
+        // Use CountDownLatch to wait for Firestore async operation
+        CountDownLatch latch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            latch.countDown();
+            return null;
+        }).when(mockDataStatus).onDataUpdated();
 
-        // Add movie and check that we update our movie with the generated id
+        // Call addMovie
         movieProvider.addMovie(movie, mockDataStatus);
 
-        // Verify that the movie ID is correctly set
-        assertEquals("Movie was not updated with correct id.", "123", movie.getId());
+        // Wait for Firestore query to complete
+        assertTrue("Firestore operation timed out", latch.await(2, TimeUnit.SECONDS));
 
-        // Verify Firestore interactions
+        // Verify movie ID is correctly set
+        assertEquals("123", movie.getId());
+
+        // Ensure Firestore set() was called
         verify(mockDocRef).set(movie);
         verify(mockDataStatus).onDataUpdated();
     }
 
+    @Test
+    public void testAddMovieFailsIfDuplicateExists() throws InterruptedException {
+        // Movie to add (with duplicate title)
+        Movie movie = new Movie("Oppenheimer", "Thriller/Historical Drama", 2023);
+
+        // Simulate Firestore returning an existing movie (i.e., duplicate exists)
+        when(mockQuerySnapshot.isEmpty()).thenReturn(false);  // Simulate that Firestore found a duplicate
+
+        // ✅ Ensure Firestore query calls onComplete when `.get()` is called
+        doAnswer(invocation -> {
+            OnCompleteListener<QuerySnapshot> listener = invocation.getArgument(0);
+            listener.onComplete(mockTask);
+            return null;
+        }).when(mockTask).addOnCompleteListener(any());
+
+        // Use CountDownLatch to wait for Firestore async operation
+        CountDownLatch latch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            latch.countDown(); //
+            return null;
+        }).when(mockDataStatus).onError(anyString());
+
+        // Call addMovie
+        movieProvider.addMovie(movie, mockDataStatus);
+
+        // Wait for Firestore query to complete (timeout after 2 seconds)
+        assertTrue("Firestore operation timed out", latch.await(2, TimeUnit.SECONDS));
+
+        // Ensure Firestore set() was NEVER called (because duplicate exists)
+        verify(mockDocRef, never()).set(any(Movie.class));
+
+        // Ensure error callback was triggered
+        verify(mockDataStatus).onError("A movie with this title already exists!");
+    }
 
 
     @Test
@@ -118,91 +156,28 @@ public class MovieProviderTest {
         Movie movie = new Movie("Oppenheimer", "Thriller/Historical Drama", 2023);
         movie.setId("123");
 
-        // Call the delete movie and verify the firebase delete method was called.
+        // Call deleteMovie and verify delete method was called
         movieProvider.deleteMovie(movie);
         verify(mockDocRef).delete();
     }
-    @Test
-    public void testUpdateMovieShouldThrowErrorForDifferentIds() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
 
+    @Test(expected = IllegalArgumentException.class)
+    public void testUpdateMovieShouldThrowErrorForDifferentIds() {
         Movie movie = new Movie("Oppenheimer", "Thriller/Historical Drama", 2023);
         movie.setId("1");
 
-        // Ensure Firestore returns a different ID to simulate a conflict
         when(mockDocRef.getId()).thenReturn("123");
 
-        // Mock DataStatus callback
-        MovieProvider.DataStatus mockDataStatus = new MovieProvider.DataStatus() {
-            @Override
-            public void onDataUpdated() {
-                fail("Expected an error but update was successful");
-            }
-
-            @Override
-            public void onError(String error) {
-                assertEquals("A movie with this title already exists!", error);
-                latch.countDown();
-            }
-        };
-
-        // Call updateMovie and wait for Firestore to complete
-        movieProvider.updateMovie(movie, "Another Title", "Another Genre", 2026, mockDataStatus);
-        latch.await(); // Wait for Firestore operation
+        movieProvider.updateMovie(movie, "Another Title", "Another Genre", 2026);
     }
 
-
-    @Test
-    public void testUpdateMovieShouldThrowErrorForEmptyName() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-
+    @Test(expected = IllegalArgumentException.class)
+    public void testUpdateMovieShouldThrowErrorForEmptyName() {
         Movie movie = new Movie("Oppenheimer", "Thriller/Historical Drama", 2023);
         movie.setId("123");
 
-        // Mock Firestore document reference
         when(mockDocRef.getId()).thenReturn("123");
 
-        // Mock DataStatus callback
-        MovieProvider.DataStatus mockDataStatus = new MovieProvider.DataStatus() {
-            @Override
-            public void onDataUpdated() {
-                fail("Expected an error but update was successful");
-            }
-
-            @Override
-            public void onError(String error) {
-                assertEquals("Invalid movie data!", error);
-                latch.countDown();
-            }
-        };
-
-        // Call updateMovie and wait for Firestore to complete
-        movieProvider.updateMovie(movie, "", "Another Genre", 2026, mockDataStatus);
-        latch.await(); // Wait for Firestore operation
-    }
-
-
-    @After
-    public void tearDown() {
-        String projectId = "lab8-af5b8";
-        URL url = null;
-        try {
-            url = new URL("http://10.0.2.2:8080/emulator/v1/projects/" + projectId + "/databases/(default)/documents");
-        } catch (MalformedURLException exception) {
-            Log.e("URL Error", Objects.requireNonNull(exception.getMessage()));
-        }
-        HttpURLConnection urlConnection = null;
-        try {
-            urlConnection = (HttpURLConnection) url.openConnection();
-            urlConnection.setRequestMethod("DELETE");
-            int response = urlConnection.getResponseCode();
-            Log.i("Response Code", "Response Code: " + response);
-        } catch (IOException exception) {
-            Log.e("IO Error", Objects.requireNonNull(exception.getMessage()));
-        } finally {
-            if (urlConnection != null) {
-                urlConnection.disconnect();
-            }
-        }
+        movieProvider.updateMovie(movie, "", "Another Genre", 2026);
     }
 }
