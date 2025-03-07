@@ -80,7 +80,11 @@ public class MainActivityTest {
 
         // Submit Form
         onView(withId(android.R.id.button1)).perform(click());
-
+        try {
+            Thread.sleep(1000); // Allows error message to render
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         // Check that our movie list has our new movie
         onView(withText("Interstellar")).check(matches(isDisplayed()));
     }
@@ -96,7 +100,11 @@ public class MainActivityTest {
 
         // Submit Form
         onView(withId(android.R.id.button1)).perform(click());
-
+        try {
+            Thread.sleep(1000); // Allows error message to render
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         // Check that an error is shown to the user
         onView(withId(R.id.edit_title)).check(matches(hasErrorText("Movie name cannot be empty!")));
     }
@@ -126,6 +134,26 @@ public class MainActivityTest {
 
         view.check(doesNotExist());
     }
+    @Test
+    public void addDuplicateMovieShouldShowErrorMessage() {
+        // Click on the button to open Add Movie dialog
+        onView(withId(R.id.buttonAddMovie)).perform(click());
+
+        // Enter an existing movie title
+        onView(withId(R.id.edit_title)).perform(ViewActions.typeText("Oppenheimer"));
+        onView(withId(R.id.edit_genre)).perform(ViewActions.typeText("Thriller/Historical Drama"));
+        onView(withId(R.id.edit_year)).perform(ViewActions.typeText("2023"));
+
+        // Close the keyboard
+        onView(withId(R.id.edit_year)).perform(ViewActions.closeSoftKeyboard());
+
+        // Click submit
+        onView(withId(android.R.id.button1)).perform(click());
+
+        // Check if the error message is displayed
+        onView(withId(R.id.error_text)).check(matches(withText("A movie with this title already exists!")));
+    }
+
 
     @After
     public void tearDown() {

@@ -24,9 +24,10 @@ public class MovieDialogFragment extends DialogFragment {
     private EditText editMovieName;
     private EditText editMovieGenre;
     private EditText editMovieYear;
+    private TextView errorTextView; // For displaying errors
     private MovieProvider movieProvider;
 
-    public static MovieDialogFragment newInstance(Movie movie){
+    public static MovieDialogFragment newInstance(Movie movie) {
         Bundle args = new Bundle();
         args.putSerializable("Movie", movie);
 
@@ -42,25 +43,86 @@ public class MovieDialogFragment extends DialogFragment {
         editMovieName = view.findViewById(R.id.edit_title);
         editMovieGenre = view.findViewById(R.id.edit_genre);
         editMovieYear = view.findViewById(R.id.edit_year);
+        errorTextView = view.findViewById(R.id.error_text);
+
         movieProvider = MovieProvider.getInstance(FirebaseFirestore.getInstance());
 
         String tag = getTag();
         Bundle bundle = getArguments();
         Movie movie;
 
-        if (tag != null && tag.equals( "Movie Details") && bundle != null){
+        if (tag != null && tag.equals("Movie Details") && bundle != null) {
             movie = (Movie) bundle.getSerializable("Movie");
             editMovieName.setText(movie.getTitle());
             editMovieGenre.setText(movie.getGenre());
             editMovieYear.setText(String.valueOf(movie.getYear()));
+        } else {
+            movie = null;
         }
-        else {movie = null;}
 
+        addInputValidation();
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+
+        AlertDialog dialog = builder
+                .setView(view)
+                .setTitle("Movie Details")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            positiveButton.setOnClickListener(v -> {
+                if (!validInput()) return;
+
+                String title = editMovieName.getText().toString().trim();
+                String genre = editMovieGenre.getText().toString().trim();
+                int year = Integer.parseInt(editMovieYear.getText().toString().trim());
+
+                // Check for duplicate movie titles
+                movieProvider.movieExists(title, exists -> {
+                    if (exists) {
+                        errorTextView.setText("A movie with this title already exists!"); // Show error
+                    } else {
+                        if (tag != null && tag.equals("Movie Details")) {
+                            movieProvider.updateMovie(movie, title, genre, year, new MovieProvider.DataStatus() {
+                                @Override
+                                public void onDataUpdated() {
+                                    dialog.dismiss(); // Close only on success
+                                }
+
+                                @Override
+                                public void onError(String error) {
+                                    errorTextView.setText(error);
+                                }
+                            });
+                        } else {
+                            movieProvider.addMovie(new Movie(title, genre, year), new MovieProvider.DataStatus() {
+                                @Override
+                                public void onDataUpdated() {
+                                    dialog.dismiss(); // Close only on success
+                                }
+
+                                @Override
+                                public void onError(String error) {
+                                    errorTextView.setText(error);
+                                }
+                            });
+                        }
+                    }
+                });
+            });
+        });
+        return dialog;
+    }
+
+    private void addInputValidation() {
         editMovieName.addTextChangedListener(new TextValidator(editMovieName) {
             @Override
             public void validate(TextView textView) {
-                if(isEmpty(textView.getText())) {
-                    textView.setError("Move name cannot be empty!");
+                if (isEmpty(textView.getText())) {
+                    textView.setError("Movie name cannot be empty!");
                 }
             }
         });
@@ -68,7 +130,7 @@ public class MovieDialogFragment extends DialogFragment {
         editMovieGenre.addTextChangedListener(new TextValidator(editMovieGenre) {
             @Override
             public void validate(TextView textView) {
-                if(isEmpty(textView.getText())) {
+                if (isEmpty(textView.getText())) {
                     textView.setError("Movie genre cannot be empty!");
                 }
             }
@@ -77,53 +139,24 @@ public class MovieDialogFragment extends DialogFragment {
         editMovieYear.addTextChangedListener(new TextValidator(editMovieYear) {
             @Override
             public void validate(TextView textView) {
-                if(isEmpty(textView.getText())) {
-                    textView.setError("Move year cannot be empty!");
+                if (isEmpty(textView.getText())) {
+                    textView.setError("Movie year cannot be empty!");
                 } else if (!isDigitsOnly(textView.getText())) {
-                    textView.setError("Move year must be numeric!");
+                    textView.setError("Movie year must be numeric!");
                 }
             }
         });
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
-
-        // Create the dialog fragment
-        AlertDialog dialog = builder
-                .setView(view)
-                .setTitle("Movie Details")
-                .setNegativeButton("Cancel", null)
-                // Override this later
-                .setPositiveButton("Continue", null)
-                .create();
-
-        // Change dialog so it does not automatically dismiss, but only when valid data is entered
-        dialog.setOnShowListener(d -> {
-            Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            positiveButton.setOnClickListener(v -> {
-                if (!validInput())
-                    return;
-                String title = editMovieName.getText().toString().trim();
-                String genre = editMovieGenre.getText().toString().trim();
-                int year = Integer.parseInt(editMovieYear.getText().toString().trim());
-                if (tag != null && tag.equals( "Movie Details")) {
-                    movieProvider.updateMovie(movie, title, genre, year);
-                } else {
-                    movieProvider.addMovie(new Movie(title, genre, year));
-                }
-                dialog.dismiss();
-            });
-        });
-        return dialog;
     }
 
     private boolean validInput() {
         Editable title = editMovieName.getText();
         Editable genre = editMovieGenre.getText();
         Editable year = editMovieYear.getText();
+
         if (isEmpty(title)) {
-            editMovieName.setError("Movie name cannot be empty!");
+            editMovieName.setError("Movie name cannot be empty!"); // ✅ Ensure this error is set
             return false;
-        } else if (isEmpty(genre)){
+        } else if (isEmpty(genre)) {
             editMovieGenre.setError("Movie genre cannot be empty!");
             return false;
         } else if (isEmpty(year)) {
@@ -135,4 +168,5 @@ public class MovieDialogFragment extends DialogFragment {
         }
         return true;
     }
+
 }
