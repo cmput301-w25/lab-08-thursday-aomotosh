@@ -81,7 +81,7 @@ public class MainActivityTest {
         // Submit Form
         onView(withId(android.R.id.button1)).perform(click());
         try {
-            Thread.sleep(1000); // Allows error message to render
+            Thread.sleep(3000); // Allows error message to render
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
